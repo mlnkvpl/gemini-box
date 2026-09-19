@@ -1,0 +1,15 @@
+services:
+  gemini:
+    build: .
+    user: "${UID:-1000}:${GID:-1000}"
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    extra_hosts:
+      - "host.docker.internal:172.17.0.1"
+    volumes:
+      - ~/workdir:/workspace
+      - ./.config:/home/node/.gemini
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - CHROME_CDP_URL=http://127.17.0.1:9223
