@@ -1,15 +1,52 @@
 services:
+  # Docker-outside-of-Docker access, scoped. Holds the real host socket
+  # itself; `gemini` never sees it directly — it only talks to this proxy
+  # over DOCKER_HOST. Grants write access to containers/images/networks/
+  # volumes/build/exec; everything else (swarm, secrets, plugins, system,
+  # nodes, services, tasks, configs) stays at the proxy's default-deny.
+  # Same setup as claude-box — each agent has its own proxy container, both
+  # ultimately talk to the same one host daemon.
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: gemini-box-docker-proxy
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - CONTAINERS=1
+      - IMAGES=1
+      - NETWORKS=1
+      - VOLUMES=1
+      - BUILD=1
+      - EXEC=1
+      - POST=1
+
   gemini:
     build: .
     user: "${UID:-1000}:${GID:-1000}"
-    working_dir: /workspace
+    # Must match the host-side volume path exactly. Docker-outside-of-Docker
+    # means `docker compose` run in here is executed by the HOST's own
+    # daemon (via docker-socket-proxy) — it resolves any relative bind mount
+    # in a compose file (e.g. `./projects/api:/var/www/html`) against the
+    # host's filesystem. A mismatched path here silently mounts the wrong
+    # (or an empty) host directory instead of the real project files.
+    # cli.sh exports HOST_WORKDIR="$HOME/workdir" before every invocation.
+    working_dir: ${HOST_WORKDIR}
     stdin_open: true
     tty: true
+    depends_on:
+      - docker-socket-proxy
     extra_hosts:
       - "host.docker.internal:172.17.0.1"
     volumes:
-      - ~/workdir:/workspace
+      - ${HOST_WORKDIR}:${HOST_WORKDIR}
       - ./.config:/home/node/.gemini
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - CHROME_CDP_URL=http://127.17.0.1:9223
+      # Was 127.17.0.1 — not the Docker bridge gateway, just a typo next to
+      # 172.17.0.1 (used correctly elsewhere, e.g. extra_hosts above and the
+      # settings.json example in README.md). Fixed here to match.
+      - CHROME_CDP_URL=http://172.17.0.1:9223
+      # Where the docker CLI/compose plugin inside this container send every
+      # command — the scoped proxy above, not a mounted socket.
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375

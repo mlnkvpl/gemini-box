@@ -33,7 +33,7 @@ case "$1" in
   # 3. Build/rebuild the docker container
   build)
     echo "Building Gemini container..."
-    GID=$(id -g) docker compose -f "$GEMINI_DIR/docker-compose.yml" build
+    HOST_WORKDIR="$HOME/workdir" GID=$(id -g) docker compose -f "$GEMINI_DIR/docker-compose.yml" build
     ;;
 
   # 3. Sourced by ~/.bashrc to export the dynamic shell function
@@ -48,7 +48,7 @@ case "$1" in
           \"$GEMINI_DIR/cli.sh\" build
           ;;
         *)
-          GID=\$(id -g) docker compose -f \"$GEMINI_DIR/docker-compose.yml\" run --rm gemini \"\$@\"
+          HOST_WORKDIR=\"\$HOME/workdir\" GID=\$(id -g) docker compose -f \"$GEMINI_DIR/docker-compose.yml\" run --rm gemini \"\$@\"
           ;;
       esac
     }
@@ -74,6 +74,6 @@ chrome)
 
   # 6. Default/Run: direct invocation without sourcing
   *)
-    GID=$(id -g) docker compose -f "$GEMINI_DIR/docker-compose.yml" run --rm gemini "$@"
+    HOST_WORKDIR="$HOME/workdir" GID=$(id -g) docker compose -f "$GEMINI_DIR/docker-compose.yml" run --rm gemini "$@"
     ;;
 esac
