@@ -2,11 +2,12 @@ FROM node:20-slim
 
 # Install standard utilities that code agents rely on.
 # jq/ripgrep/shellcheck/python3+python3-yaml: diagnostic/verification tools.
+# chromium: headless browser for AI agent visual validation and screenshots.
 # libnss3-tools: mkcert needs it to cover Firefox's own trust store too.
 # gnupg: needed for the PHP apt repo signing key below.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git curl ca-certificates procps \
-        jq ripgrep shellcheck python3 python3-yaml libnss3-tools gnupg \
+        jq ripgrep shellcheck python3 python3-yaml libnss3-tools gnupg chromium \
     && rm -rf /var/lib/apt/lists/*
 
 # PHP 8.3 CLI + Composer — matches this workspace's actual runtime version,
