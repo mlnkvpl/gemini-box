@@ -62,6 +62,7 @@ chrome)
     google-chrome \
       --remote-debugging-port=9222 \
       --user-data-dir=/tmp/chrome-agent-profile \
+      --ignore-certificate-errors \
       --no-first-run \
       --no-default-browser-check > /dev/null 2>&1 &
 
