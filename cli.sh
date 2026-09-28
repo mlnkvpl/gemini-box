@@ -9,6 +9,8 @@ if [ -f "$GEMINI_DIR/.env" ]; then
 fi
 CMD="${CUSTOM_CLI:-gemini-box}"
 
+source "$GEMINI_DIR/scripts/help.sh"
+
 INSTALL_LINE="[ -f \"$GEMINI_DIR/cli.sh\" ] && source \"$GEMINI_DIR/cli.sh\" env"
 
 case "$1" in
@@ -36,6 +38,38 @@ case "$1" in
     HOST_WORKDIR="$HOME/workdir" GID=$(id -g) docker compose -f "$GEMINI_DIR/docker-compose.yml" build
     ;;
 
+  # Show status of this compose file's services. Note docker-socket-proxy is
+  # normally the only thing "up" here — `gemini` only exists for the
+  # duration of a `run --rm` invocation (see the default case below), so it
+  # won't show as running between sessions even though the proxy does.
+  ps)
+    HOST_WORKDIR="$HOME/workdir" GID=$(id -g) docker compose -f "$GEMINI_DIR/docker-compose.yml" ps
+    ;;
+
+  # Stop running services without removing them (mainly docker-socket-proxy).
+  stop)
+    HOST_WORKDIR="$HOME/workdir" GID=$(id -g) docker compose -f "$GEMINI_DIR/docker-compose.yml" stop
+    ;;
+
+  # Stop AND remove everything this compose file owns (docker-socket-proxy +
+  # its network). docker-socket-proxy uses `restart: unless-stopped` and is
+  # only ever *started* via `depends_on` on the `gemini` service — `run --rm`
+  # removes the `gemini` container on exit but never touches its
+  # dependencies, so the proxy otherwise keeps running indefinitely in the
+  # background even with no gemini session active. This is the only way to
+  # actually shut it down. Same behavior as claude-box — see its cli.sh.
+  down)
+    HOST_WORKDIR="$HOME/workdir" GID=$(id -g) docker compose -f "$GEMINI_DIR/docker-compose.yml" down
+    ;;
+
+  logs)
+    HOST_WORKDIR="$HOME/workdir" GID=$(id -g) docker compose -f "$GEMINI_DIR/docker-compose.yml" logs -f "${@:2}"
+    ;;
+
+  help|--help|-h)
+    show_help
+    ;;
+
   # 3. Sourced by ~/.bashrc to export the dynamic shell function
   env)
     eval "
@@ -46,6 +80,21 @@ case "$1" in
           ;;
         build)
           \"$GEMINI_DIR/cli.sh\" build
+          ;;
+        ps)
+          \"$GEMINI_DIR/cli.sh\" ps
+          ;;
+        stop)
+          \"$GEMINI_DIR/cli.sh\" stop
+          ;;
+        down)
+          \"$GEMINI_DIR/cli.sh\" down
+          ;;
+        logs)
+          \"$GEMINI_DIR/cli.sh\" logs \"\${@:2}\"
+          ;;
+        help|--help|-h)
+          \"$GEMINI_DIR/cli.sh\" help
           ;;
         *)
           HOST_WORKDIR=\"\$HOME/workdir\" GID=\$(id -g) docker compose -f \"$GEMINI_DIR/docker-compose.yml\" run --rm gemini \"\$@\"
