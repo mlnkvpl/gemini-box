@@ -1,7 +1,7 @@
 
 # Gemini-Box: Sandboxed Gemini CLI + Browser Automation
 
-A secure, isolated Docker container setup for running Google's official Gemini CLI (`@google/gemini-cli`) paired with live host browser automation via the Chrome DevTools Model Context Protocol (`chrome-devtools-mcp`).
+A secure, isolated Docker container setup for running Google's official Gemini CLI (`@google/gemini-cli`) paired with live host browser automation via the Chrome DevTools Model Context Protocol (`chrome-devtools-mcp`) and tool access to `../obsidian`'s notes vault via the reference filesystem MCP server (`@modelcontextprotocol/server-filesystem`).
 
 It isolates the agent strictly inside your `~/workdir` projects, shields your host home directory (SSH keys, shell dotfiles, personal credentials), prevents root file-permission issues, and bridges safely to your host's Google Chrome instance for autonomous web tasks.
 
@@ -109,8 +109,12 @@ RUN install -m 0755 -d /etc/apt/keyrings \
     && apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Gemini CLI and official Chrome DevTools MCP server globally
-RUN npm install -g @google/gemini-cli chrome-devtools-mcp
+# Install Gemini CLI, the official Chrome DevTools MCP server, and the
+# reference filesystem MCP server globally. The filesystem server gives this
+# agent tool access to ../obsidian's vault (mounted in via the same
+# HOST_WORKDIR bind as everything else — see docker-compose.yml's
+# OBSIDIAN_VAULT_PATH and .config/settings.json's "obsidian-vault" entry).
+RUN npm install -g @google/gemini-cli chrome-devtools-mcp @modelcontextprotocol/server-filesystem
 
 # Fix: the entrypoint runs as the `node` user at runtime but this global
 # install happens as root at build time — this breaks the CLI's
@@ -169,11 +173,18 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - CHROME_CDP_URL=http://172.17.0.1:9223
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
+      # Absolute, host-mirrored path to ../obsidian's vault, for the
+      # "obsidian-vault" filesystem MCP server below. Computed from
+      # HOST_WORKDIR (not hardcoded) so it stays correct regardless of the
+      # host username. Already readable/writable here: it's inside the big
+      # HOST_WORKDIR bind mount, no extra volume needed.
+      - OBSIDIAN_VAULT_PATH=${HOST_WORKDIR}/obsidian/vault
 ```
 
 #### `.config/settings.json`
 
-Configures the agent to use API key authentication and enables the slim browser toolset to minimize token consumption:
+Configures the agent to use API key authentication, enables the slim browser toolset to minimize token consumption, and gives it filesystem-scoped tool access to `../obsidian`'s vault (read/write notes as `read_file`/`write_file`/`edit_file`/`search_files`/etc. — see
+[`@modelcontextprotocol/server-filesystem`](https://www.npmjs.com/package/@modelcontextprotocol/server-filesystem)):
 
 ```json
 {
@@ -185,11 +196,24 @@ Configures the agent to use API key authentication and enables the slim browser 
         "--browser-url=http://172.17.0.1:9223",
         "--slim"
       ]
+    },
+    "obsidian-vault": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "exec npx -y @modelcontextprotocol/server-filesystem \"$OBSIDIAN_VAULT_PATH\""
+      ]
     }
   }
 }
 
 ```
+
+Wrapped in `sh -c` (rather than calling `npx` directly) so `$OBSIDIAN_VAULT_PATH` — set in
+`docker-compose.yml`, not hardcoded here — gets expanded; MCP server configs don't do
+their own shell/env-var substitution. The obsidian container itself doesn't need to be
+running for this — it reads/writes `./vault` directly on disk, same as `../claude-box`'s
+planned wiring (see `../obsidian/CLAUDE.md`'s "Agent access to the vault (MCP)" section).
 
 #### `.env`
 
@@ -380,6 +404,16 @@ For tool-calling and web automation on the free tier, use Flash models to avoid 
 * "Navigate to google.com and search for the latest news on Linux kernel releases."
 * "Navigate to https://news.ycombinator.com and extract the titles and URLs of the top 5 submissions."
 
+### 5. Example Obsidian Vault Prompts
+
+Needs the `obsidian-vault` MCP server (see `.config/settings.json` above) — works whether
+or not `../obsidian`'s container is actually running, since it's reading `./vault`
+directly off disk:
+
+* "List the notes in my vault and summarize what's in the most recently modified one."
+* "Create a note called `Meeting Notes/2026-09-28.md` with today's standup summary."
+* "Search my vault for notes mentioning 'traefik' and list them."
+
 ---
 
 ## Troubleshooting
@@ -413,3 +447,13 @@ Confirm the proxy sidecar is actually running: `docker compose -f ~/gemini/docke
 
 * **A project's `docker compose up` starts containers, but a bind-mounted directory is empty/wrong inside them:**
 `HOST_WORKDIR` wasn't set to the same path on both sides of a volume mount — check `cli.sh`'s invocations still export `HOST_WORKDIR="$HOME/workdir"` before every `docker compose` call, and that `docker-compose.yml`'s `working_dir`/volume lines still reference `${HOST_WORKDIR}`, not a hardcoded alias like `/workspace`. See [Docker access](#docker-access-docker-outside-of-docker) for why this has to match exactly.
+
+* **`obsidian-vault` MCP tool calls fail with a "path not found"/"outside allowed directories" error:**
+`OBSIDIAN_VAULT_PATH` (set in `docker-compose.yml` from `HOST_WORKDIR`) didn't resolve to
+`../obsidian/vault`, or `../obsidian` doesn't have a `vault/` directory at all yet. Confirm
+from inside the container:
+```bash
+HOST_WORKDIR="$HOME/workdir" GID=$(id -g) docker compose -f ~/gemini/docker-compose.yml run --rm --entrypoint sh gemini -c 'echo $OBSIDIAN_VAULT_PATH; ls $OBSIDIAN_VAULT_PATH'
+```
+The obsidian container itself doesn't need to be running — this reads the directory
+straight off disk.

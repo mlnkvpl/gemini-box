@@ -50,3 +50,10 @@ services:
       # Where the docker CLI/compose plugin inside this container send every
       # command — the scoped proxy above, not a mounted socket.
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
+      # Absolute, host-mirrored path to ../obsidian's vault, for the
+      # "obsidian-vault" filesystem MCP server in .config/settings.json.
+      # Computed from HOST_WORKDIR (not hardcoded) so it stays correct
+      # regardless of the host username — same reasoning as working_dir
+      # above. Already readable/writable here: it's inside the big
+      # HOST_WORKDIR bind mount, no extra volume needed.
+      - OBSIDIAN_VAULT_PATH=${HOST_WORKDIR}/obsidian/vault
