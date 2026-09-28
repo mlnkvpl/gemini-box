@@ -45,12 +45,8 @@ RUN install -m 0755 -d /etc/apt/keyrings \
     && apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Gemini CLI, the official Chrome DevTools MCP server, and the
-# reference filesystem MCP server globally. The filesystem server gives this
-# agent tool access to ../obsidian's vault (mounted in via the same
-# HOST_WORKDIR bind as everything else — see docker-compose.yml's
-# OBSIDIAN_VAULT_PATH and .config/settings.json's "obsidian-vault" entry).
-RUN npm install -g @google/gemini-cli chrome-devtools-mcp @modelcontextprotocol/server-filesystem
+# Install Gemini CLI and official Chrome DevTools MCP server globally
+RUN npm install -g @google/gemini-cli chrome-devtools-mcp
 
 # Fix: the entrypoint runs as the `node` user at runtime but this global
 # install happens as root at build time — confirmed on claude-box this
